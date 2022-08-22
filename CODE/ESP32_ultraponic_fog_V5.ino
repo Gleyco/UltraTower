@@ -60,7 +60,7 @@ void setup() {
 
   Serial.println("BOOT PROCEDURE OK");
 
-  pourMeADrink();
+  startPump();
 
   
   startTimeMist = millis();
