@@ -28,7 +28,7 @@ WiFiClient  client;
 #define ENABLE_SENSORS_PIN 26
 #define ONE_WIRE_TEMP 27
 #define DHT_SENSOR_PIN  14 
-#define pH_PIN 13
+#define pH_PIN 35   //Change 13 to 35
 #define TANK_HIGH_PIN 2
 #define TANK_LOW_PIN 15
 #define CP_PIN 32
@@ -76,10 +76,10 @@ bool bleActivated = false;
 // TIMER CONST
 #define TIME_RESTART_ESP   86400000 
 #define TIME_CHECK_WATER_LEVEL   120000 
-#define WIFI_TIMEOUT 30000 // 1 min in milliseconds
-const int TIME_ON_PUMP =  240000; //4 min
-const int TIME_ON_PUMP_INIT = 10000; //10 secondes      
+#define WIFI_TIMEOUT 30000 
+const int TIME_ON_PUMP =  15000; //4 min
 const int TIME_OFF_PUMP = 1800000; //30 min
+
 const int TIME_ON_MISTERS = 1000;  //10 min
 const int TIME_OFF_NONE_MISTERS = 1000; //5 min 
 #define TIME_CHECK_BUTTON_BLE 1000 //1 seconde
@@ -177,7 +177,7 @@ void setup() {
 
  
   
-
+  digitalWrite(PUMP_PIN, LOW);
   pinMode(PUMP_PIN, OUTPUT);
   digitalWrite(PUMP_PIN, LOW);
   pinMode(LED_PIN, OUTPUT);
@@ -186,17 +186,13 @@ void setup() {
   digitalWrite(ENABLE_SENSORS_PIN, LOW);
   pinMode(ENABLE_SENSORS_PIN, OUTPUT);
 
- /*Preferences preferences;
-         preferences.begin(TITLE_PREF, false);
-         preferences.clear();
-         preferences.end();*/
 
 
   delay(500);
 
   Serial.println("BOOT PROCEDURE OK");
 
-  //startPump();
+  
 
   
   
@@ -214,6 +210,7 @@ void setup() {
   
   isPump = false;
   isMist = false;
+  startPump();
 
 }
 
@@ -223,6 +220,7 @@ void loop() {
   //BLE Button Activation
   if(touchRead(BLE_PIN) < VALUE_THRESHOLD && !bleActivated){
     checkIfStartBle();  
+    pinMode(BLE_PIN, INPUT); 
   }
  
 
@@ -246,26 +244,40 @@ void loop() {
 
   
 
-
-  //MISTER ROUTINE
+//MISTER ROUTINE
   if(enableMist){
     if(isMist){
-       if (millis() - startTimeMist > timeOnMister) {setMisterOff();}
+       if (millis() - startTimeMist > timeOnMister) {
+         setMisterOff();
+         startTimeMist = millis();
+         isMist = false;
+         if(deviceConnected){
+             sendStatutNotif("MOFF");
+         }
+       }
 
        if (millis() - startTimeCheckWaterLevel > TIME_CHECK_WATER_LEVEL) {
-        if(checkIfPinIsInWater(TANK_LOW_PIN)){
-          startTimeCheckWaterLevel = millis();
-        }else{
-          startPump();
-        }
+            if(checkIfPinIsInWater(TANK_LOW_PIN)){
+              startTimeCheckWaterLevel = millis();
+            }else{
+              startPump();
+            }
 
         }
     }else{
 
-      
         if (millis() - startTimeMist > timeOffMister) {
+          
           if(checkIfPinIsInWater(TANK_LOW_PIN)){
-            setMisterOn();
+             setMisterOn();
+             isMist = true;
+             startTimeMist = millis();
+           
+
+            if(deviceConnected){
+               sendStatutNotif("MON");
+            }
+           
           }else{
             startPump();
           }
@@ -273,45 +285,20 @@ void loop() {
           
       }
     }
+
+
+    if (millis() - startTimePump > TIME_OFF_PUMP) {
+      startPump();
+    }
   }
 
-  //PUMP ROUTINE
-  if(isPump){
-    if(touchRead(TANK_HIGH_PIN) < VALUE_THRESHOLD_WATER_LEVEL){
-       if(checkIfPinIsInWater(TANK_HIGH_PIN)){
-        Serial.println("WATER LEVEL : FULL STOP PUMP");
-        digitalWrite(PUMP_PIN, LOW);
-        digitalWrite(LED_PIN, HIGH);
-        isPump = false;
-      }
-    }
-   
-
-    if(millis() - startTimePump > TIME_ON_PUMP){
-         Serial.println("TIME OUT PUMP : ERROR STOP PUMP");
-         isPump = false;
-         digitalWrite(PUMP_PIN, LOW);
-         digitalWrite(LED_PIN, HIGH);
-     
-    }
-
-      pinMode(TANK_HIGH_PIN, INPUT);
- }  
 
 
   //SENSORS ROUTINE
   if(bleActivated || enableThingSpeak){
     if (millis() - startTimeSensors > timeCheckSensors) {checkSensors();}
   }
-  
-  
-
-
-
-  
-  if (millis() - startTimePump > TIME_OFF_PUMP && !isMist) {
-    startPump();
-  }
+ 
 
 
 
@@ -329,7 +316,7 @@ void loop() {
 //**********************************************************************************************************************************************************
 
 void setMisterOn(){
-     isMist = true;
+    
   
     digitalWrite(MIST1_PIN, LOW);
     pinMode(MIST1_PIN, OUTPUT);
@@ -341,18 +328,15 @@ void setMisterOn(){
     ledcAttachPin(MIST2_PIN, ledChannel);
     ledcWrite(ledChannel, dutyCycle);
 
-     startTimeMist = millis();
-     sendStatutNotif("MON");
 }
 
 void setMisterOff(){
-    isMist = false;
+   
     ledcDetachPin(MIST1_PIN);
     pinMode(MIST1_PIN, INPUT);
     ledcDetachPin(MIST2_PIN);
     pinMode(MIST2_PIN, INPUT);
-    startTimeMist = millis();
-    sendStatutNotif("MOFF");
+    
 }
 
 
@@ -365,7 +349,7 @@ bool checkIfPinIsInWater(int pin){
   int i = 0;
   
    while (1){
-           if(millis() - startTime > 100){ //Attendre 2 s de connection sinon echec
+           if(millis() - startTime > 500){ //Attendre 2 s de connection sinon echec
              Serial.println("WATER LEVEL : Pin is not in water");
              return false;
              break;
@@ -394,31 +378,31 @@ void startPump(){
 
   isPump = true;
   Serial.println("START PUMP");
-  
-  digitalWrite(PUMP_PIN, HIGH);
-  digitalWrite(LED_PIN, LOW);
 
- /*  for (uint16_t i=0; i < 5; i++){
-     digitalWrite(PUMP_PIN, LOW);
-     delay(100);
-     digitalWrite(PUMP_PIN, HIGH);
-     delay(100);
-    
-   }*/
- // digitalWrite(PUMP_PIN, HIGH);
+  if(isMist){
+    setMisterOff();
+  }
+  
+
+
+  delay(500);
+ 
+  digitalWrite(PUMP_PIN, HIGH);
+
+  delay(200);
 
   int i = 0;
   int touchReadValue = 0;
   startTimePump = millis();
 
   while (isPump){
-       if(millis() - startTimePump > TIME_ON_PUMP_INIT){
+       if(millis() - startTimePump > TIME_ON_PUMP){
          Serial.println("TIME OUT PUMP : ERROR");
          isPump = false;
          break;
        }
 
-       touchReadValue = touchRead(TANK_LOW_PIN);
+       touchReadValue = touchRead(TANK_HIGH_PIN);
 
        if(touchReadValue < VALUE_THRESHOLD_WATER_LEVEL){
         i++;
@@ -427,21 +411,35 @@ void startPump(){
        }
 
         if(i >= 5){
-          Serial.println("WATER LEVEL : BOTTOM TANK REACH");
+          errorPump = 0;
+          Serial.println("WATER LEVEL : HIGH TANK REACH");
           break;
         }
 
        delay(100);
-
    }
 
 
     
  if(!isPump){
-  digitalWrite(PUMP_PIN, LOW);
-  digitalWrite(LED_PIN, HIGH);
+    errorPump++;
+    if(errorPump >=2){
+      isMist = false;
+      startTimeMist = millis() - timeOffMister;   
+    }
  }  
- startTimeCheckWaterLevel = millis();
+
+ digitalWrite(PUMP_PIN, LOW);
+ digitalWrite(LED_PIN, HIGH);
+
+ pinMode(TANK_HIGH_PIN, INPUT);
+
+ if(isMist){
+    setMisterOn();
+  }
+  
+ startTimePump = millis();
+ startTimeCheckWaterLevel  = millis();
 }
 
 
