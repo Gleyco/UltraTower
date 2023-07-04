@@ -2,6 +2,7 @@
 
 UltraTower is an automatic vertical ultraponic garden.
 You can follow the project on Hackaday : https://hackaday.io/project/186829-ultratower
+You can follow the 2023 project on Hackaday : [https://hackaday.io/project/186829-ultratower](https://hackaday.io/project/191799-ultratower-2023)
 
 ## Licenses
 Unless otherwise stated, all works presented here that are not based on software/code are subject to the Creative Common Attribution license .
