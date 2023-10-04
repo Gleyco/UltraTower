@@ -92,7 +92,6 @@ uint8_t rootThermometer[8];
 #define TITLE_PREF "Pref"
 
 
-
 //BLE
 #define SERVICE_UUID           "367fa97d-b107-49e0-9503-3409d2c247c9"
 #define CHARACTERISTIC_UUID_RX "367fa97d-b108-49e0-9503-3409d2c247c9"
@@ -319,7 +318,6 @@ void loop() {
         } else {
           startPump();
         }
-
       }
     } else {
 
@@ -627,8 +625,6 @@ bool checkIfPinIsInWater(int pin) {
 }
 
 void startPump() {
- 
-  
 
   isPump = true;
   Serial.println("START PUMP");
@@ -717,8 +713,6 @@ void startPump() {
   startTimePump = millis();
   startTimeCheckWaterLevel  = millis();
 }
-
-
 
 
 
@@ -829,18 +823,20 @@ class MyCallbacks: public BLECharacteristicCallbacks {
         // ledcSetup(ledChannel, frequencyMister, resolution);
         sendNotifDataOverBLE("MFREQ");
 
-
       } else if (strcmp(cmd, "MENA") == 0) {
+       
         enableMist = object["DATA"];
-        sendNotifDataOverBLE("MENA");
+        
+        String strTosend = "MENA:" +  String(enableMist);
+        sendNotifDataOverBLE(strTosend);
+       // sendNotifDataOverBLE("MENA");
         if (!enableMist) {
           setMisterOff();
         }
 
       } else if (strcmp(cmd, "MISON") == 0) { //MIST is ON
         String strTosend = "MISON:" +  String(isMist);
-        sendNotifDataOverBLE(strTosend);;
-
+        sendNotifDataOverBLE(strTosend);
 
 
       } else if (strcmp(cmd, "MCYCL") == 0) {
@@ -866,8 +862,16 @@ class MyCallbacks: public BLECharacteristicCallbacks {
         String strTosend = "TFUSE:" + strToReturn;
         sendNotifDataOverBLE(strTosend);
 
-      } else if (strcmp(cmd, "THING") == 0) {
-        enableThingSpeak = object["DATA_ENA"];
+      } else if (strcmp(cmd, "THENA") == 0) {
+        enableThingSpeak = object["DATA"];
+     
+        String strTosend = "THENA:" + String(enableThingSpeak);
+        sendNotifDataOverBLE(strTosend);
+      
+
+      }else if (strcmp(cmd, "THING") == 0) {
+       // enableThingSpeak = object["DATA_ENA"];
+        
         intervalTimeThingSpeak = object["TIME"];
         ssid = String(object["SSID"].as<char*>());
         myWriteAPIKey = String(object["APIKEY"].as<char*>());
@@ -878,7 +882,13 @@ class MyCallbacks: public BLECharacteristicCallbacks {
           pw = newPW;
         }
 
-        String strTosend = "THING:" + String(initThingSpeak());
+        bool isInit = checkWiFiAndThingSpeak();
+        if(isInit){
+          enableThingSpeak = true; //Enable thingSpeak
+        }
+
+        String strTosend = "THING:" + String(isInit);
+        Serial.println(strTosend);
         sendNotifDataOverBLE(strTosend);
         turnOffWiFi();
 
@@ -887,7 +897,26 @@ class MyCallbacks: public BLECharacteristicCallbacks {
         sendNotifDataOverBLE("PHENA");
 
 
-      } else if (strcmp(cmd, "PHCAL") == 0) {
+      } else if (strcmp(cmd, "PHCAL4") == 0) { 
+        activateSensors();
+        delay(500);
+        getRawPhSensor();
+        delay(100);
+        pHCalib4 = getRawPhSensor();
+        String strTosend = "PHCAL4:" + String(pHCalib4);
+        sendNotifDataOverBLE(strTosend);
+
+      }
+      else if (strcmp(cmd, "PHCAL9") == 0) { 
+        activateSensors();
+        delay(500);
+        getRawPhSensor();
+        delay(100);
+        pHCalib9 = getRawPhSensor();
+        String strTosend = "PHCAL9:" + String(pHCalib9);
+        sendNotifDataOverBLE(strTosend);
+
+      }else if (strcmp(cmd, "PHCAL") == 0) { //DEPRECATED
         activateSensors();
         delay(500);
         getRawPhSensor();
@@ -896,7 +925,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
         String strTosend = "PHCAL:" + strToReturn;
         sendNotifDataOverBLE(strTosend);
 
-      } else if (strcmp(cmd, "PHSET") == 0) {
+      } else if (strcmp(cmd, "PHSET") == 0) {  //DEPRECATED
         pHCalib4 = object["DATA4"];
         pHCalib9 = object["DATA9"];
         sendNotifDataOverBLE("PHSET");
@@ -936,7 +965,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
       jsonBuffer["MOFF"].set(timeOffMister);
 
       jsonBuffer["PHENA"].set(enablepH);
-      if (pHCalib4 != -1) {
+      if (pHCalib4 != -1 && pHCalib9 != -1) {
         jsonBuffer["PHCAL"].set(true);
       } else {
         jsonBuffer["PHCAL"].set(false);
@@ -1560,7 +1589,7 @@ bool initThingSpeak() {
   WiFi.begin(ssid.c_str(), pw.c_str());
 
 
-  while (WiFi.status() != WL_CONNECTED) { //Changement de && par || TODO peut être remplacé par un if
+  while (WiFi.status() != WL_CONNECTED) { 
     Serial.print("*");
     if (millis() - startAttemptTime > WIFI_TIMEOUT) {
       break;
@@ -1576,6 +1605,44 @@ bool initThingSpeak() {
   }
 
   return ThingSpeak.begin(client);  // Initialize ThingSpeak
+}
+
+bool checkWiFiAndThingSpeak() {
+  Serial.println("Check WIFI and ThingSpeak");
+
+
+  // CONNECTION AU WIFI
+  unsigned long startAttemptTime = millis();
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), pw.c_str());
+
+
+  while (WiFi.status() != WL_CONNECTED) { 
+    Serial.print("*");
+    if (millis() - startAttemptTime > 10000) {  //10 sec to try connecting with wifi
+      break;
+    }
+    delay(50);
+  }
+  Serial.println("");
+
+
+  // Make sure that we're actually connected, otherwise return false
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+  
+  ThingSpeak.begin(client); //Always return true
+
+  int code = ThingSpeak.getLastReadStatus(); 
+
+  bool success = true;
+
+  if(code == 404 || code == -301 || code == -304){
+    success = false;
+  }
+
+  return success; 
 }
 
 
